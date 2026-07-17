@@ -14,22 +14,21 @@ This document tracks the overall progress of the Career OS project.
 - [x] SYSTEM_MODULES.md
 - [x] REQ-001 - Job Search Module
 - [x] MASTER_CV.md (Concept Document)
+- [x] Task-007: Career Knowledge Builder Architecture
 
 ---
 
 ## In Progress
 
-- [ ] Task-007: Career Knowledge Builder Architecture
+- [ ] Task-008: REQ-002 - Career Knowledge Builder
 
 ---
 
 ## Pending Tasks
 
-- [ ] REQ-002 - Career Knowledge Builder
 - [ ] Domain Model
 - [ ] Data Model
 - [ ] System Architecture
-- [ ] Folder Structure Finalization
 - [ ] AI Extraction Engine Design
 - [ ] Career Fact Model
 - [ ] Canonical Object Model
@@ -43,15 +42,15 @@ This document tracks the overall progress of the Career OS project.
 
 ## Current Task
 
-Task-007: Career Knowledge Builder Architecture
+Task-008: REQ-002 - Career Knowledge Builder
 
-Status: In Progress
+Status: Not Started
 
 ---
 
 ## Next Task
 
-REQ-002 - Career Knowledge Builder
+Define the complete requirements for the Career Knowledge Builder.
 
 ---
 
