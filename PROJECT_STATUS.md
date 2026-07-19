@@ -6,35 +6,50 @@ This document tracks the overall progress of the Career OS project.
 
 ---
 
-## Completed Tasks
+## Current Milestone
 
-- [x] GitHub Repository Created
+✅ M1 – Architecture Baseline (Completed)
+
+🟡 M2 – Domain & Data Model (Starting)
+
+---
+
+## Completed
+
+- [x] Git Repository Initialized
+- [x] GitHub Repository Connected
+- [x] Initial Project Structure
 - [x] README.md
 - [x] PROJECT_VISION.md
+- [x] PROJECT_CHARTER.md
 - [x] SYSTEM_MODULES.md
+- [x] SRS.md
+- [x] M1_CLOSURE.md
 - [x] REQ-001 - Job Search Module
-- [x] MASTER_CV.md (Concept Document)
-- [x] Task-007: Career Knowledge Builder Architecture
+- [x] REQ-002 - Career Knowledge Builder
+- [x] Architecture Principles
+- [x] Design Decisions
+- [x] Business Rules
+- [x] Project Rules
+- [x] M1 Architecture Baseline Committed to GitHub
 
 ---
 
 ## In Progress
 
-- [ ] Task-008: REQ-002 - Career Knowledge Builder
+- [ ] M2 – Domain Model
 
 ---
 
-## Pending Tasks
+## Upcoming
 
-- [ ] Domain Model
-- [ ] Data Model
-- [ ] System Architecture
-- [ ] AI Extraction Engine Design
-- [ ] Career Fact Model
-- [ ] Canonical Object Model
-- [ ] Knowledge Base Design
-- [ ] CV Generator Design
-- [ ] Source Code Development
+- [ ] Entity Relationship Model (ERD)
+- [ ] SQLite Schema
+- [ ] Career Knowledge Graph
+- [ ] Master CV Data Model
+- [ ] AI Extraction Pipeline
+- [ ] CV Generation Engine
+- [ ] Job Matching Engine
 - [ ] Testing
 - [ ] Documentation Review
 
@@ -42,17 +57,16 @@ This document tracks the overall progress of the Career OS project.
 
 ## Current Task
 
-Task-008: REQ-002 - Career Knowledge Builder
-
-Status: Not Started
+M2 – Domain Model Design
 
 ---
 
 ## Next Task
 
-Define the complete requirements for the Career Knowledge Builder.
+Define the core business entities and their relationships.
 
 ---
 
-Last Updated:
-17 July 2026
+Last Updated
+
+19 July 2026
