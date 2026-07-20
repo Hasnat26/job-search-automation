@@ -39,7 +39,7 @@ A single Employment record may reference multiple skills.
 
 A single Skill may be associated with multiple Employment records.
 
-The relationship exists independently of the lifecycle of either entity while both referenced entities remain valid.
+The relationship maintains its own association metadata but cannot exist without valid referenced Employment and Skill entities.
 
 ---
 
@@ -67,9 +67,9 @@ Each relationship shall reference exactly one Skill entity.
 
 ---
 
-### BR-ESR-013
+### BR-ESR-003
 
-When both employment duration and `years_used` are available, `years_used` shall not exceed the duration of the associated Employment record.
+Multiple skills may be associated with a single Employment record.
 
 ---
 
@@ -148,6 +148,10 @@ Duplicate relationships between the same Employment and Skill are not permitted.
 
 `proficiency_level`, when provided, shall contain only approved enumeration values.
 
+The proficiency level represents skill proficiency demonstrated within the associated Employment Skill Relationship.
+
+It does not modify or redefine the canonical Skill entity.
+
 Recommended values include:
 
 - Beginner
@@ -165,13 +169,19 @@ Implementations may extend this enumeration while preserving semantic compatibil
 
 ---
 
+### BR-ESR-013
+
+When both employment duration and `years_used` are available, `years_used` shall not exceed the duration of the associated Employment record.
+
+---
+
 ## Lifecycle
 
-An Employment Skill Relationship exists only while both referenced entities remain valid.
+The Employment Skill Relationship maintains its own relationship-specific metadata.
 
-If either the referenced Employment or Skill entity is removed from the canonical model, this relationship shall also be removed or archived according to implementation policy.
+However, it cannot exist without valid referenced Employment and Skill entities.
 
-The lifecycle of this relationship does not alter or govern the lifecycle of either referenced entity.
+Changes to the lifecycle of either referenced entity may require the relationship to be archived or removed according to implementation policy.
 
 ---
 
