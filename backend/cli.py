@@ -34,21 +34,29 @@ def _extract_chunks(markdown: str, provider: OllamaProvider) -> list[dict]:
         raise RuntimeError("CV ingestion failed: Markdown representation is empty")
     profiles: list[dict] = []
     failures: list[str] = []
+    total = len(chunks)
+    print(f"CV extraction: {total} chunks queued", flush=True)
     for index, chunk in enumerate(chunks, start=1):
-        prompt = build_extraction_prompt(chunk, chunk_index=index, total_chunks=len(chunks))
+        prompt = build_extraction_prompt(chunk, chunk_index=index, total_chunks=total)
         last_error: Exception | None = None
-        for _ in range(2):
+        for attempt in range(1, 3):
+            print(f"[chunk {index}/{total}] Ollama extraction attempt {attempt}...", flush=True)
             try:
                 parsed = parse_profile_json(provider.generate_json(prompt))
                 profiles.append(normalize_missing(parsed))
                 last_error = None
+                print(f"[chunk {index}/{total}] completed", flush=True)
                 break
             except Exception as exc:
                 last_error = exc
+                print(f"[chunk {index}/{total}] failed: {exc}", flush=True)
         if last_error is not None:
             failures.append(f"chunk {index}: {last_error}")
+
     if not profiles:
         raise RuntimeError("Candidate extraction failed for every CV chunk: " + "; ".join(failures))
+    if failures:
+        print(f"CV extraction: {len(failures)} chunk(s) failed; continuing with successful chunks", flush=True)
     return profiles
 
 
@@ -58,21 +66,27 @@ def ingest_cv(path: str, db_path: str = "data/job_agent.db", model: str | None =
     if len(raw_text.strip()) < 50:
         raise RuntimeError("CV ingestion failed: extracted text is empty or too short")
 
+    print(f"CV ingestion: extracted {len(raw_text):,} characters from {meta.get('page_count')} page(s)", flush=True)
+
     # Stage 1: source -> transient Markdown. No intermediate file is created.
     markdown = build_master_cv_markdown(source_path=candidate, raw_text=raw_text, metadata=meta)
+    print(f"CV ingestion: built transient Markdown ({len(markdown):,} characters)", flush=True)
 
     # Stage 2: bounded local-LLM extraction so large CVs are not truncated by context limits.
     provider = OllamaProvider(model=model)
     chunk_profiles = _extract_chunks(markdown, provider)
+    print("CV extraction: merging candidate knowledge...", flush=True)
     parsed = merge_profiles(chunk_profiles)
 
     raw_evidence = parsed.get("evidence", [])
+    print("CV extraction: validating evidence...", flush=True)
     evidence = normalize_evidence(raw_evidence, markdown, candidate.name)
     gated, evidence_missing = apply_evidence_gate(parsed, evidence)
     gated.pop("evidence", None)
     gated["missing_fields"] = sorted(set(evidence_missing))
 
     # Stage 3: persist only structured knowledge/evidence and non-content metadata.
+    print("CV ingestion: saving structured candidate profile...", flush=True)
     store = SQLiteStore(db_path)
     try:
         store.deactivate_profiles()
@@ -88,6 +102,7 @@ def ingest_cv(path: str, db_path: str = "data/job_agent.db", model: str | None =
     finally:
         store.close()
 
+    print("CV ingestion: complete", flush=True)
     return {
         "document_id": doc_id,
         "profile_id": profile_id,
