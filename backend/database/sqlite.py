@@ -8,10 +8,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS cv_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_name TEXT NOT NULL,
-    file_path TEXT NOT NULL,
     file_type TEXT NOT NULL,
     sha256 TEXT NOT NULL UNIQUE,
-    raw_text TEXT NOT NULL,
     page_count INTEGER,
     extractor TEXT NOT NULL,
     ingested_at TEXT NOT NULL
@@ -23,6 +21,7 @@ CREATE TABLE IF NOT EXISTS candidate_profiles (
     missing_fields_json TEXT NOT NULL,
     extraction_status TEXT NOT NULL,
     extraction_error TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     FOREIGN KEY(document_id) REFERENCES cv_documents(id)
 );
@@ -48,23 +47,67 @@ class SQLiteStore:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
+        self._migrate_legacy_document_columns()
         self.conn.commit()
 
-    def add_document(self, *, file_name: str, file_path: str, file_type: str, sha256: str, raw_text: str, page_count: int | None, extractor: str) -> int:
+    def _migrate_legacy_document_columns(self) -> None:
+        """Remove persisted source content/path columns from legacy databases.
+
+        SQLite cannot drop columns safely on every supported version, so rebuild the
+        table when an older schema contains file_path/raw_text. Existing structured
+        metadata and hashes are retained; source document content is deliberately
+        discarded.
+        """
+        columns = {row[1] for row in self.conn.execute("PRAGMA table_info(cv_documents)")}
+        if "file_path" not in columns and "raw_text" not in columns:
+            return
+        self.conn.execute("ALTER TABLE cv_documents RENAME TO cv_documents_legacy")
+        self.conn.execute("""
+            CREATE TABLE cv_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                sha256 TEXT NOT NULL UNIQUE,
+                page_count INTEGER,
+                extractor TEXT NOT NULL,
+                ingested_at TEXT NOT NULL
+            )
+        """)
+        self.conn.execute("""
+            INSERT INTO cv_documents(id,file_name,file_type,sha256,page_count,extractor,ingested_at)
+            SELECT id,file_name,file_type,sha256,page_count,extractor,ingested_at
+            FROM cv_documents_legacy
+        """)
+        self.conn.execute("DROP TABLE cv_documents_legacy")
+
+    def deactivate_profiles(self) -> None:
+        self.conn.execute("UPDATE candidate_profiles SET is_active=0 WHERE is_active=1")
+        self.conn.commit()
+
+    def add_document(self, *, file_name: str, file_type: str, sha256: str, page_count: int | None, extractor: str) -> int:
         now = datetime.now(timezone.utc).isoformat()
-        cur = self.conn.execute("INSERT INTO cv_documents(file_name,file_path,file_type,sha256,raw_text,page_count,extractor,ingested_at) VALUES (?,?,?,?,?,?,?,?)", (file_name,file_path,file_type,sha256,raw_text,page_count,extractor,now))
+        cur = self.conn.execute(
+            "INSERT INTO cv_documents(file_name,file_type,sha256,page_count,extractor,ingested_at) VALUES (?,?,?,?,?,?)",
+            (file_name, file_type, sha256, page_count, extractor, now),
+        )
         self.conn.commit()
         return int(cur.lastrowid)
 
     def add_profile(self, document_id: int, profile: dict[str, Any], missing_fields: list[str], status: str = "COMPLETE", error: str | None = None) -> int:
         now = datetime.now(timezone.utc).isoformat()
-        cur = self.conn.execute("INSERT INTO candidate_profiles(document_id,profile_json,missing_fields_json,extraction_status,extraction_error,created_at) VALUES (?,?,?,?,?,?)", (document_id,json.dumps(profile,ensure_ascii=False),json.dumps(missing_fields),status,error,now))
+        cur = self.conn.execute(
+            "INSERT INTO candidate_profiles(document_id,profile_json,missing_fields_json,extraction_status,extraction_error,is_active,created_at) VALUES (?,?,?,?,?,?,?)",
+            (document_id, json.dumps(profile, ensure_ascii=False), json.dumps(missing_fields), status, error, 1, now),
+        )
         self.conn.commit()
         return int(cur.lastrowid)
 
     def add_evidence(self, profile_id: int, items: list[Any]) -> None:
         for item in items:
-            self.conn.execute("INSERT INTO evidence_items(profile_id,field_name,extracted_value_json,claim,source_text,source_location,status,confidence,extraction_method) VALUES (?,?,?,?,?,?,?,?,?)", (profile_id,item.field_name,json.dumps(item.extracted_value,ensure_ascii=False),item.claim,item.source_text,item.source_location,item.status,item.confidence,item.extraction_method))
+            self.conn.execute(
+                "INSERT INTO evidence_items(profile_id,field_name,extracted_value_json,claim,source_text,source_location,status,confidence,extraction_method) VALUES (?,?,?,?,?,?,?,?,?)",
+                (profile_id, item.field_name, json.dumps(item.extracted_value, ensure_ascii=False), item.claim, item.source_text, item.source_location, item.status, item.confidence, item.extraction_method),
+            )
         self.conn.commit()
 
     def close(self) -> None:
