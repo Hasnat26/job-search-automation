@@ -1,46 +1,37 @@
 import argparse
 import json
+import tempfile
+from pathlib import Path
 
 from backend.candidate.extractor import build_extraction_prompt, chunk_markdown, merge_profiles, normalize_missing, parse_profile_json
-from backend.candidate.ingestion import extract_text, sha256_file, validate_cv_path
-from backend.candidate.markdown import build_master_cv_markdown
+from backend.candidate.markitdown_adapter import convert_to_markdown, read_markdown
 from backend.candidate.ollama import OllamaProvider
 from backend.database.sqlite import SQLiteStore
 from backend.evidence.service import apply_evidence_gate, normalize_evidence
 
 
-def convert_cv_to_markdown(path: str) -> dict:
-    """Validate and build transient Markdown; never write it to disk."""
-    candidate = validate_cv_path(path)
-    raw_text, meta = extract_text(candidate)
-    if len(raw_text.strip()) < 50:
-        raise RuntimeError("CV conversion failed: extracted text is empty or too short")
-    markdown = build_master_cv_markdown(source_path=candidate, raw_text=raw_text, metadata=meta)
-    return {
-        "source_file": str(candidate),
-        "markdown_persisted": False,
-        "processing_representation": "in_memory_markdown",
-        "file_type": candidate.suffix.lower().lstrip("."),
-        "page_count": meta.get("page_count"),
-        "extractor": meta.get("extractor"),
-        "source_characters": len(raw_text),
-        "markdown_characters": len(markdown),
-    }
+def convert_cv_to_markdown(path: str, output: str | None = None) -> dict:
+    """Convert a document with the external MarkItDown repo/tool."""
+    source = Path(path).expanduser().resolve()
+    target = Path(output).expanduser().resolve() if output else source.with_suffix(".md")
+    result = convert_to_markdown(source, target)
+    result["processing_representation"] = "external_markitdown_markdown"
+    return result
 
 
 def _extract_chunks(markdown: str, provider: OllamaProvider) -> list[dict]:
     chunks = chunk_markdown(markdown)
     if not chunks:
-        raise RuntimeError("CV ingestion failed: Markdown representation is empty")
+        raise RuntimeError("Candidate ingestion failed: Markdown input is empty")
     profiles: list[dict] = []
     failures: list[str] = []
     total = len(chunks)
-    print(f"CV extraction: {total} chunks queued", flush=True)
+    print(f"Candidate extraction: {total} chunks queued", flush=True)
     for index, chunk in enumerate(chunks, start=1):
         prompt = build_extraction_prompt(chunk, chunk_index=index, total_chunks=total)
         last_error: Exception | None = None
         for attempt in range(1, 3):
-            print(f"[chunk {index}/{total}] Ollama extraction attempt {attempt}...", flush=True)
+            print(f"[chunk {index}/{total}] LLM extraction attempt {attempt}...", flush=True)
             try:
                 parsed = parse_profile_json(provider.generate_json(prompt))
                 profiles.append(normalize_missing(parsed))
@@ -54,62 +45,52 @@ def _extract_chunks(markdown: str, provider: OllamaProvider) -> list[dict]:
             failures.append(f"chunk {index}: {last_error}")
 
     if not profiles:
-        raise RuntimeError("Candidate extraction failed for every CV chunk: " + "; ".join(failures))
+        raise RuntimeError("Candidate extraction failed for every Markdown chunk: " + "; ".join(failures))
     if failures:
-        print(f"CV extraction: {len(failures)} chunk(s) failed; continuing with successful chunks", flush=True)
+        print(f"Candidate extraction: {len(failures)} chunk(s) failed; continuing", flush=True)
     return profiles
 
 
-def ingest_cv(path: str, db_path: str = "data/job_agent.db", model: str | None = None) -> dict:
-    candidate = validate_cv_path(path)
-    raw_text, meta = extract_text(candidate)
-    if len(raw_text.strip()) < 50:
-        raise RuntimeError("CV ingestion failed: extracted text is empty or too short")
+def ingest_markdown(path: str, db_path: str = "data/job_agent.db", model: str | None = None) -> dict:
+    """Ingest an already-created Markdown artifact; no document conversion occurs here."""
+    markdown_path = Path(path).expanduser().resolve()
+    markdown = read_markdown(markdown_path)
+    print(f"Candidate ingestion: read {len(markdown):,} Markdown characters", flush=True)
 
-    print(f"CV ingestion: extracted {len(raw_text):,} characters from {meta.get('page_count')} page(s)", flush=True)
-
-    # Stage 1: source -> transient Markdown. No intermediate file is created.
-    markdown = build_master_cv_markdown(source_path=candidate, raw_text=raw_text, metadata=meta)
-    print(f"CV ingestion: built transient Markdown ({len(markdown):,} characters)", flush=True)
-
-    # Stage 2: bounded local-LLM extraction so large CVs are not truncated by context limits.
     provider = OllamaProvider(model=model)
     chunk_profiles = _extract_chunks(markdown, provider)
-    print("CV extraction: merging candidate knowledge...", flush=True)
+    print("Candidate extraction: merging knowledge...", flush=True)
     parsed = merge_profiles(chunk_profiles)
 
-    raw_evidence = parsed.get("evidence", [])
-    print("CV extraction: validating evidence...", flush=True)
-    evidence = normalize_evidence(raw_evidence, markdown, candidate.name)
+    print("Candidate extraction: validating evidence...", flush=True)
+    evidence = normalize_evidence(parsed.get("evidence", []), markdown, markdown_path.name)
     gated, evidence_missing = apply_evidence_gate(parsed, evidence)
     gated.pop("evidence", None)
     gated["missing_fields"] = sorted(set(evidence_missing))
 
-    # Stage 3: persist only structured knowledge/evidence and non-content metadata.
-    print("CV ingestion: saving structured candidate profile...", flush=True)
+    print("Candidate ingestion: saving structured knowledge...", flush=True)
     store = SQLiteStore(db_path)
     try:
         store.deactivate_profiles()
         doc_id = store.add_document(
-            file_name=candidate.name,
-            file_type=candidate.suffix.lower().lstrip("."),
-            sha256=sha256_file(candidate),
-            page_count=meta.get("page_count"),
-            extractor=meta["extractor"],
+            file_name=markdown_path.name,
+            file_type="md",
+            sha256=None,
+            page_count=None,
+            extractor="external-markitdown",
         )
         profile_id = store.add_profile(doc_id, gated, gated["missing_fields"])
         store.add_evidence(profile_id, evidence)
     finally:
         store.close()
 
-    print("CV ingestion: complete", flush=True)
+    print("Candidate ingestion: complete", flush=True)
     return {
         "document_id": doc_id,
         "profile_id": profile_id,
         "active_profile_rebuilt": True,
         "chunks_processed": len(chunk_profiles),
-        "source_persisted": False,
-        "markdown_persisted": False,
+        "markdown_persisted": True,
         "profile": gated,
         "evidence_count": len(evidence),
         "verified": sum(e.status == "VERIFIED" for e in evidence),
@@ -120,21 +101,48 @@ def ingest_cv(path: str, db_path: str = "data/job_agent.db", model: str | None =
     }
 
 
+def ingest_cv(path: str, db_path: str = "data/job_agent.db", model: str | None = None) -> dict:
+    """End-to-end convenience flow: external MarkItDown -> temporary Markdown -> candidate ingestion."""
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+
+    with tempfile.TemporaryDirectory(prefix="job-agent-md-") as temp_dir:
+        temporary_md = Path(temp_dir) / f"{source.stem}.md"
+        print("CV ingestion: converting with external MarkItDown...", flush=True)
+        conversion = convert_to_markdown(source, temporary_md)
+        print(f"CV ingestion: Markdown ready ({conversion['markdown_characters']:,} characters)", flush=True)
+        result = ingest_markdown(str(temporary_md), db_path=db_path, model=model)
+        result["source_file"] = str(source)
+        result["source_persisted"] = False
+        result["markdown_persisted"] = False
+        result["converter"] = "external-markitdown"
+        return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="job-agent")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    convert = sub.add_parser("convert-cv", help="Validate a CV and build transient in-memory Markdown")
+    convert = sub.add_parser("convert-cv", help="Convert PDF/DOCX/etc. to Markdown using external MarkItDown")
     convert.add_argument("path")
+    convert.add_argument("--output", default=None)
 
-    ingest = sub.add_parser("ingest-cv", help="Build an evidence-aware persistent candidate profile")
+    ingest_md = sub.add_parser("ingest-markdown", help="Build candidate knowledge from an existing Markdown file")
+    ingest_md.add_argument("path")
+    ingest_md.add_argument("--db", default="data/job_agent.db")
+    ingest_md.add_argument("--model", default=None)
+
+    ingest = sub.add_parser("ingest-cv", help="Convert with MarkItDown, then ingest temporary Markdown")
     ingest.add_argument("path")
     ingest.add_argument("--db", default="data/job_agent.db")
     ingest.add_argument("--model", default=None)
 
     args = parser.parse_args()
     if args.command == "convert-cv":
-        result = convert_cv_to_markdown(args.path)
+        result = convert_cv_to_markdown(args.path, args.output)
+    elif args.command == "ingest-markdown":
+        result = ingest_markdown(args.path, args.db, args.model)
     elif args.command == "ingest-cv":
         result = ingest_cv(args.path, args.db, args.model)
     else:
