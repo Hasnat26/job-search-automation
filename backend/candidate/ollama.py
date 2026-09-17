@@ -10,13 +10,21 @@ class OllamaError(RuntimeError):
     pass
 
 class OllamaProvider:
-    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 180):
+    def __init__(self, base_url: str | None = None, model: str | None = None, timeout: int = 300):
         self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", DEFAULT_BASE_URL)).rstrip("/")
         self.model = model or os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
         self.timeout = timeout
 
     def generate_json(self, prompt: str) -> str:
-        payload = json.dumps({"model": self.model, "prompt": prompt, "stream": False, "format": "json"}).encode()
+        payload = json.dumps({
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "think": False,
+            "options": {"temperature": 0},
+            "keep_alive": "5m",
+        }).encode()
         request = Request(f"{self.base_url}/api/generate", data=payload, headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urlopen(request, timeout=self.timeout) as response:
