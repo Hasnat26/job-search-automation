@@ -23,8 +23,13 @@ def _command() -> list[str]:
         if package_src.exists():
             return [sys.executable, "-m", "markitdown"]
 
-    return ["markitdown"]
+    markitdown_executable = Path(sys.executable).with_name(
+        "markitdown.exe" if os.name == "nt" else "markitdown"
+    )
+    if markitdown_executable.is_file():
+        return [str(markitdown_executable)]
 
+    return ["markitdown"]
 
 def convert_to_markdown(source: str | Path, output: str | Path) -> dict:
     """Use the standalone MarkItDown repo/tool to create a Markdown artifact."""
