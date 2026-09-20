@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from backend.candidate.markitdown_adapter import _command
 
@@ -11,4 +12,6 @@ def test_command_resolves_markitdown_from_current_python_environment():
     if executable.name.lower() == "markitdown.exe":
         assert executable.is_file()
     else:
-        assert command == ["markitdown"]
+        expected = Path(sys.executable).resolve().parent / "markitdown"
+        assert executable.resolve() == expected
+        assert executable.is_file()
