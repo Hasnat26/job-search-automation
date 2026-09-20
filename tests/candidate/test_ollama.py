@@ -20,3 +20,15 @@ def test_chunk_defaults_are_cpu_friendly():
 
     chunks = chunk_markdown("x" * 5248)
     assert [len(chunk) for chunk in chunks] == [4000, 1448]
+
+
+def test_deterministic_profile_uses_exact_evidence():
+    from backend.candidate.extractor import extract_deterministic_profile
+
+    profile = extract_deterministic_profile(
+        "John Doe\nProject Manager\n10 years of experience in industrial automation.\nPMP certified.\nEmail: john.doe@example.com\n"
+    )
+    assert profile["full_name"] == "John Doe"
+    assert profile["email"] == "john.doe@example.com"
+    assert "PMP certified." in profile["certifications"]
+    assert any(item["raw_snippet"] == "PMP certified." for item in profile["evidence"])
