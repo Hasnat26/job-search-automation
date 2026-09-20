@@ -11,10 +11,14 @@ PROFILE_KEYS = [
 # Ollama commonly runs with a 4K-token context on local machines. Keep each
 # extraction request comfortably below that limit so a 30-40 page CV is not
 # silently truncated.
-DEFAULT_CHUNK_CHARS = 10000
-DEFAULT_OVERLAP_CHARS = 500
+DEFAULT_CHUNK_CHARS = 4000
+DEFAULT_OVERLAP_CHARS = 200
 
-SYSTEM_PROMPT = """You extract candidate knowledge from one section of a CV. Use ONLY facts explicitly supported by the supplied CV section. Never infer visa status, work authorization, sponsorship, nationality, qualifications, dates, employers, skills, or experience. Return ONLY a JSON object with these keys: full_name, email, phone, current_location, work_authorization, visa_status, willing_to_relocate, preferred_countries, preferred_regions, preferred_industries, preferred_job_titles, languages, skills, certifications, education, experiences, projects, evidence. Use null for unavailable scalar fields and [] for unavailable list fields. Every factual value you extract must have at least one evidence object with field_name, extracted_value, claim, raw_snippet, source_location, and confidence. raw_snippet MUST be an exact verbatim substring of the supplied CV section. Do not invent snippets. Do not output query, response, commentary, markdown, or any other keys."""
+SYSTEM_PROMPT = """Extract candidate facts from the supplied CV section using ONLY explicit text. Never infer visa status, work authorization, sponsorship, nationality, qualifications, dates, employers, skills, or experience.
+
+Return ONLY one compact JSON object with exactly these keys: full_name, email, phone, current_location, work_authorization, visa_status, willing_to_relocate, preferred_countries, preferred_regions, preferred_industries, preferred_job_titles, languages, skills, certifications, education, experiences, projects, evidence.
+
+Use null for unavailable scalar fields and [] for unavailable list fields. Keep list values concise. Do not repeat the same fact. Keep evidence compact: maximum one evidence object per extracted field and maximum 20 evidence objects total. Each evidence object MUST contain field_name, extracted_value, claim, raw_snippet, source_location, and confidence. raw_snippet MUST be an exact verbatim substring of this CV section. Use null for unavailable source_location. Keep claim short. Use confidence 1.0 only when raw_snippet exactly supports the value; otherwise do not create the evidence item. Do not invent snippets. Do not output markdown, explanations, query, response, or any other keys."""
 
 
 def build_extraction_prompt(cv_text: str, *, chunk_index: int = 1, total_chunks: int = 1) -> str:
