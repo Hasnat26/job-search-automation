@@ -13,3 +13,10 @@ def test_non_object_fails():
         pass
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_chunk_defaults_are_cpu_friendly():
+    from backend.candidate.extractor import chunk_markdown
+
+    chunks = chunk_markdown("x" * 5248)
+    assert [len(chunk) for chunk in chunks] == [4000, 1448]
