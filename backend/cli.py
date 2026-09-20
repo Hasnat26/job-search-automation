@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import tempfile
 from pathlib import Path
 
@@ -31,85 +32,31 @@ def convert_cv_to_markdown(path: str, output: str | None = None) -> dict:
     return result
 
 
-def _extract_chunks(
-    markdown: str,
-    provider: OllamaProvider,
-) -> list[dict]:
+def _extract_chunks(markdown: str, provider: OllamaProvider) -> list[dict]:
+    """Build a reliable baseline profile, with optional LLM enrichment."""
+    from backend.candidate.extractor import extract_deterministic_profile
+
+    baseline = extract_deterministic_profile(markdown)
+    profiles = [baseline]
+
+    # CPU-only machines should not block ingestion on an optional LLM call.
+    # Enable explicitly with ENABLE_LLM_EXTRACTION=1.
+    if os.getenv("ENABLE_LLM_EXTRACTION", "").lower() not in {"1", "true", "yes"}:
+        print("Candidate extraction: deterministic baseline complete; LLM enrichment disabled", flush=True)
+        return profiles
+
     chunks = chunk_markdown(markdown)
-
-    if not chunks:
-        raise RuntimeError(
-            "Candidate ingestion failed: Markdown input is empty"
-        )
-
-    profiles: list[dict] = []
-    failures: list[str] = []
-    total = len(chunks)
-
-    print(
-        f"Candidate extraction: {total} chunks queued",
-        flush=True,
-    )
+    print(f"Candidate extraction: {len(chunks)} chunks queued for optional LLM enrichment", flush=True)
 
     for index, chunk in enumerate(chunks, start=1):
-        prompt = build_extraction_prompt(
-            chunk,
-            chunk_index=index,
-            total_chunks=total,
-        )
-
-        last_error: Exception | None = None
-
-        for attempt in range(1, 2):
-            print(
-                f"[chunk {index}/{total}] "
-                f"LLM extraction attempt {attempt}...",
-                flush=True,
-            )
-
-            try:
-                parsed = parse_profile_json(
-                    provider.generate_json(prompt)
-                )
-
-                profiles.append(
-                    normalize_missing(parsed)
-                )
-
-                last_error = None
-
-                print(
-                    f"[chunk {index}/{total}] completed",
-                    flush=True,
-                )
-
-                break
-
-            except Exception as exc:
-                last_error = exc
-
-                print(
-                    f"[chunk {index}/{total}] failed: {exc}",
-                    flush=True,
-                )
-
-        if last_error is not None:
-            failures.append(
-                f"chunk {index}: {last_error}"
-            )
-
-    if not profiles:
-        raise RuntimeError(
-            "Candidate extraction failed for every Markdown chunk: "
-            + "; ".join(failures)
-        )
-
-    if failures:
-        print(
-            f"Candidate extraction: {len(failures)} "
-            f"chunk(s) failed; continuing",
-            flush=True,
-        )
+        prompt = build_extraction_prompt(chunk, chunk_index=index, total_chunks=len(chunks))
+        try:
+            print(f"[chunk {index}/{len(chunks)}] optional LLM enrichment...", flush=True)
+            parsed = parse_profile_json(provider.generate_json(prompt))
+            profiles.append(normalize_missing(parsed))
+            print(f"[chunk {index}/{len(chunks)}] enrichment completed", flush=True)
+        except Exception as exc:
+            print(f"[chunk {index}/{len(chunks)}] enrichment skipped: {exc}", flush=True)
 
     return profiles
 
