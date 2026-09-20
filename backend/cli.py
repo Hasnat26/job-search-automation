@@ -60,7 +60,7 @@ def _extract_chunks(
 
         last_error: Exception | None = None
 
-        for attempt in range(1, 3):
+        for attempt in range(1, 2):
             print(
                 f"[chunk {index}/{total}] "
                 f"LLM extraction attempt {attempt}...",
