@@ -4,7 +4,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_MODEL = "qwen3:8b"
+DEFAULT_MODEL = "qwen3:4b"
 
 class OllamaError(RuntimeError):
     pass
