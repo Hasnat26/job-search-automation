@@ -55,7 +55,7 @@ async def upload_cv(file: UploadFile = File(...)) -> dict:
         )
 
     db_path = os.getenv("JOB_AGENT_DB", "data/job_agent.db")
-    model = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
 
     with tempfile.TemporaryDirectory(prefix="job-agent-upload-") as temp_dir:
         upload_path = Path(temp_dir) / filename
